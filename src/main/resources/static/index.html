@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>secret-locker</title>
+<style>
+	:root {
+		--bg: #f6f7f9; --panel: #ffffff; --text: #1c2430; --muted: #5d6b7c;
+		--line: #d9dee5; --accent: #1f5fbf; --danger: #b3261e; --ok: #1b6e3c;
+		--code-bg: #eef1f5;
+	}
+	@media (prefers-color-scheme: dark) {
+		:root {
+			--bg: #14181d; --panel: #1c222a; --text: #e6eaf0; --muted: #9aa7b6;
+			--line: #2f3945; --accent: #7db0ff; --danger: #ff8a80; --ok: #7fd6a0;
+			--code-bg: #252d37;
+		}
+	}
+	* { box-sizing: border-box; }
+	body {
+		margin: 0; padding: 24px 16px 48px; background: var(--bg); color: var(--text);
+		font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+	}
+	main { max-width: 960px; margin: 0 auto; }
+	h1 { font-size: 22px; margin: 0 0 4px; }
+	.sub { color: var(--muted); margin: 0 0 20px; }
+	section {
+		background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+		padding: 16px; margin-bottom: 16px;
+	}
+	h2 { font-size: 15px; margin: 0 0 12px; }
+	.status { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: center; }
+	.status dl { display: flex; flex-wrap: wrap; gap: 4px 24px; margin: 0; flex: 1 1 auto; }
+	.status dt { color: var(--muted); display: inline; }
+	.status dd { display: inline; margin: 0 0 0 6px; font-weight: 600; }
+	form { display: grid; grid-template-columns: 1fr 1fr 1.4fr auto; gap: 12px; align-items: end; }
+	label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+	input {
+		width: 100%; padding: 8px 10px; font: inherit; color: var(--text);
+		background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+	}
+	input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+	button {
+		padding: 8px 14px; font: inherit; border-radius: 6px; cursor: pointer;
+		border: 1px solid var(--line); background: var(--panel); color: var(--text);
+	}
+	button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+	@media (prefers-color-scheme: dark) { button.primary { color: #0c1420; } }
+	button.danger { color: var(--danger); }
+	button:disabled { opacity: .55; cursor: default; }
+	.message { min-height: 22px; margin: 10px 0 0; font-size: 14px; }
+	.message.error { color: var(--danger); }
+	.message.ok { color: var(--ok); }
+	.table-wrap { overflow-x: auto; }
+	table { width: 100%; border-collapse: collapse; font-size: 14px; }
+	th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+	th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+	td.actions { white-space: nowrap; }
+	td.actions button { padding: 4px 10px; margin-right: 6px; }
+	code {
+		font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+		background: var(--code-bg); padding: 2px 6px; border-radius: 4px; word-break: break-all;
+	}
+	.revealed { margin-top: 6px; }
+	.empty { color: var(--muted); padding: 16px 10px; }
+	@media (max-width: 720px) { form { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+	<h1>secret-locker</h1>
+	<p class="sub">입력한 값은 Vault Transit 키로 암호화해 저장합니다. 목록에는 암호문만 보입니다.</p>
+
+	<section aria-labelledby="status-title">
+		<h2 id="status-title">암호화 상태</h2>
+		<div class="status">
+			<dl>
+				<div><dt>방식</dt><dd id="st-mode">-</dd></div>
+				<div><dt>키</dt><dd id="st-key">-</dd></div>
+				<div><dt>최신 버전</dt><dd id="st-version">-</dd></div>
+				<div><dt>버전별 건수</dt><dd id="st-counts">-</dd></div>
+			</dl>
+			<button type="button" id="rewrap-btn">재암호화 실행</button>
+		</div>
+		<p class="message" id="status-msg" role="status"></p>
+	</section>
+
+	<section aria-labelledby="form-title">
+		<h2 id="form-title">새 레코드</h2>
+		<form id="create-form" autocomplete="off">
+			<div>
+				<label for="owner">소유자</label>
+				<input id="owner" name="owner" maxlength="100" required placeholder="예: E1024">
+			</div>
+			<div>
+				<label for="label">라벨</label>
+				<input id="label" name="label" maxlength="100" required placeholder="예: 급여계좌">
+			</div>
+			<div>
+				<label for="value">값</label>
+				<input id="value" name="value" type="password" maxlength="1000" required autocomplete="off">
+			</div>
+			<button type="submit" class="primary" id="save-btn">저장</button>
+		</form>
+		<p class="message" id="form-msg" role="status"></p>
+	</section>
+
+	<section aria-labelledby="list-title">
+		<h2 id="list-title">레코드</h2>
+		<div class="table-wrap">
+			<table>
+				<thead>
+					<tr><th>소유자</th><th>라벨</th><th>버전</th><th>방식</th><th>암호문</th><th>동작</th></tr>
+				</thead>
+				<tbody id="rows"></tbody>
+			</table>
+		</div>
+		<p class="empty" id="empty" hidden>저장된 레코드가 없습니다.</p>
+		<p class="message" id="list-msg" role="status"></p>
+	</section>
+</main>
+
+<script>
+(function () {
+	'use strict';
+
+	var rows = document.getElementById('rows');
+	var empty = document.getElementById('empty');
+	var form = document.getElementById('create-form');
+	var saveBtn = document.getElementById('save-btn');
+	var rewrapBtn = document.getElementById('rewrap-btn');
+
+	// 서버 문자열은 항상 textContent로 넣는다. innerHTML을 쓰지 않는다.
+	function el(tag, text, className) {
+		var node = document.createElement(tag);
+		if (text !== undefined && text !== null) { node.textContent = text; }
+		if (className) { node.className = className; }
+		return node;
+	}
+
+	function setMessage(id, text, kind) {
+		var node = document.getElementById(id);
+		node.textContent = text || '';
+		node.className = 'message' + (kind ? ' ' + kind : '');
+	}
+
+	function api(method, path, body) {
+		var options = { method: method, headers: {} };
+		if (body !== undefined) {
+			options.headers['Content-Type'] = 'application/json';
+			options.body = JSON.stringify(body);
+		}
+		return fetch(path, options).then(function (response) {
+			if (response.status === 204) { return null; }
+			return response.json().catch(function () { return null; }).then(function (data) {
+				if (!response.ok) {
+					throw new Error((data && data.message) || ('요청이 실패했습니다 (' + response.status + ')'));
+				}
+				return data;
+			});
+		});
+	}
+
+	function loadStatus() {
+		return api('GET', '/api/crypto/status').then(function (status) {
+			document.getElementById('st-mode').textContent = status.mode;
+			document.getElementById('st-key').textContent = status.keyName;
+			document.getElementById('st-version').textContent = 'v' + status.latestKeyVersion;
+			var counts = Object.keys(status.recordsByKeyVersion || {}).map(function (version) {
+				return version + ' ' + status.recordsByKeyVersion[version] + '건';
+			});
+			document.getElementById('st-counts').textContent = counts.length ? counts.join(', ') : '없음';
+		}).catch(function (error) {
+			setMessage('status-msg', error.message, 'error');
+		});
+	}
+
+	function shorten(ciphertext) {
+		return ciphertext.length > 44 ? ciphertext.slice(0, 44) + '…' : ciphertext;
+	}
+
+	function renderRow(record) {
+		var tr = document.createElement('tr');
+		tr.appendChild(el('td', record.owner));
+		tr.appendChild(el('td', record.label));
+		tr.appendChild(el('td', 'v' + record.keyVersion));
+		tr.appendChild(el('td', record.cryptoMode));
+
+		var cipherCell = document.createElement('td');
+		var cipherCode = el('code', shorten(record.ciphertext));
+		cipherCode.title = record.ciphertext;
+		cipherCell.appendChild(cipherCode);
+		var revealed = el('div', null, 'revealed');
+		revealed.hidden = true;
+		cipherCell.appendChild(revealed);
+		tr.appendChild(cipherCell);
+
+		var actions = el('td', null, 'actions');
+		var viewBtn = el('button', '보기');
+		viewBtn.type = 'button';
+		viewBtn.setAttribute('aria-label', record.owner + ' ' + record.label + ' 값 보기');
+		viewBtn.addEventListener('click', function () {
+			if (!revealed.hidden) {
+				// 복호화한 값은 화면에서만 잠깐 보여 주고 숨길 때 지운다
+				revealed.hidden = true;
+				revealed.textContent = '';
+				viewBtn.textContent = '보기';
+				return;
+			}
+			viewBtn.disabled = true;
+			api('GET', '/api/records/' + encodeURIComponent(record.id)).then(function (detail) {
+				revealed.textContent = '';
+				revealed.appendChild(el('code', detail.value));
+				revealed.hidden = false;
+				viewBtn.textContent = '숨기기';
+				setMessage('list-msg', '');
+			}).catch(function (error) {
+				setMessage('list-msg', error.message, 'error');
+			}).then(function () { viewBtn.disabled = false; });
+		});
+		actions.appendChild(viewBtn);
+
+		var deleteBtn = el('button', '삭제', 'danger');
+		deleteBtn.type = 'button';
+		deleteBtn.setAttribute('aria-label', record.owner + ' ' + record.label + ' 삭제');
+		deleteBtn.addEventListener('click', function () {
+			if (!window.confirm(record.owner + ' / ' + record.label + ' 레코드를 삭제할까요?')) { return; }
+			deleteBtn.disabled = true;
+			api('DELETE', '/api/records/' + encodeURIComponent(record.id)).then(function () {
+				setMessage('list-msg', '삭제했습니다.', 'ok');
+				return refresh();
+			}).catch(function (error) {
+				setMessage('list-msg', error.message, 'error');
+				deleteBtn.disabled = false;
+			});
+		});
+		actions.appendChild(deleteBtn);
+		tr.appendChild(actions);
+		return tr;
+	}
+
+	function loadRecords() {
+		return api('GET', '/api/records').then(function (records) {
+			rows.textContent = '';
+			records.forEach(function (record) { rows.appendChild(renderRow(record)); });
+			empty.hidden = records.length > 0;
+		}).catch(function (error) {
+			setMessage('list-msg', error.message, 'error');
+		});
+	}
+
+	function refresh() {
+		return Promise.all([loadStatus(), loadRecords()]);
+	}
+
+	form.addEventListener('submit', function (event) {
+		event.preventDefault();
+		saveBtn.disabled = true;
+		setMessage('form-msg', '');
+		api('POST', '/api/records', {
+			owner: form.owner.value,
+			label: form.label.value,
+			value: form.value.value
+		}).then(function (saved) {
+			form.reset();
+			setMessage('form-msg', '저장했습니다. 키 버전 v' + saved.keyVersion + '로 암호화됐습니다.', 'ok');
+			return refresh();
+		}).catch(function (error) {
+			setMessage('form-msg', error.message, 'error');
+		}).then(function () { saveBtn.disabled = false; });
+	});
+
+	rewrapBtn.addEventListener('click', function () {
+		rewrapBtn.disabled = true;
+		setMessage('status-msg', '');
+		api('POST', '/api/records/rewrap').then(function (result) {
+			setMessage('status-msg', result.rewrapped + '건을 최신 키 버전으로 다시 암호화했습니다.', 'ok');
+			return refresh();
+		}).catch(function (error) {
+			setMessage('status-msg', error.message, 'error');
+		}).then(function () { rewrapBtn.disabled = false; });
+	});
+
+	refresh();
+})();
+</script>
+</body>
+</html>

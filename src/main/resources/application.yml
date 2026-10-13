@@ -1,0 +1,35 @@
+spring:
+  application:
+    name: secret-locker
+  datasource:
+    url: jdbc:h2:file:${locker.db.path}
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: always
+
+locker:
+  vault:
+    uri: ${VAULT_ADDR:http://vault:8200}
+    role-id: ${VAULT_ROLE_ID:}
+    wrapped-secret-id: ${VAULT_WRAPPED_SECRET_ID:}
+    key-name: ${LOCKER_KEY_NAME:locker-key}
+  crypto:
+    mode: ${LOCKER_CRYPTO_MODE:transit}
+    key-refresh: ${LOCKER_KEY_REFRESH:5m}
+  db:
+    path: ${LOCKER_DB_PATH:/data/locker}
